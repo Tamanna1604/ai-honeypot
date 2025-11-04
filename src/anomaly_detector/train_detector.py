@@ -45,6 +45,19 @@ def main():
     print("Training the Isolation Forest model...")
     model = IsolationForest(n_estimators=100, contamination='auto', random_state=42)
     model.fit(features_scaled)
+    import numpy as np
+
+    # Compute anomaly scores (lower = more anomalous)
+    scores = model.decision_function(X_scaled)
+
+    # Dynamic thresholding: mean - 2 * std catches only strong outliers
+    threshold = scores.mean() - 2 * scores.std()
+
+    # Save the threshold for later use in inference
+    np.save("models/if_threshold.npy", threshold)
+
+    print(f"[INFO] Adaptive threshold set to: {threshold:.4f}")
+
     os.makedirs('models', exist_ok=True)
     
     # --- Save the scaler along with other artifacts ---
