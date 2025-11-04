@@ -3,24 +3,26 @@ import pandas as pd
 import time
 import random
 import re
+import numpy as np
 from sentence_transformers import SentenceTransformer
 from sklearn.preprocessing import StandardScaler
 
 # Import the parsing function
 from src.anomaly_detector.train_detector import parse_log_line
 
-# --- Load Model, Scaler, Columns, and Sentence Transformer ---
+# --- Load Model, Scaler, Columns, Threshold, and Sentence Transformer ---
 try:
     model = joblib.load('models/isolation_forest_model.joblib')
-    scaler = joblib.load('models/scaler.joblib') # <-- LOAD THE SCALER
+    scaler = joblib.load('models/scaler.joblib')
     reference_cols = joblib.load('models/feature_columns.joblib')
+    threshold = np.load('models/if_threshold.npy')  # ✅ load adaptive threshold
     print("Loading sentence transformer model...")
     embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
 except FileNotFoundError:
-    print("ERROR: Model files not found. Please run the updated train_detector.py first.")
+    print("ERROR: Model or threshold files not found. Please re-run the updated train_detector.py first.")
     exit()
 
-
+# --- Malicious test logs ---
 malicious_logs = [
     "Sep 02 21:40:00 corp-server-01 sshd[9999]: Failed password for invalid user evil from 172.16.0.100 port 22",
     "Sep 02 21:41:00 web-prod-03 kernel: [9999]: Buffer overflow attempt detected from 10.0.5.20",
@@ -28,29 +30,36 @@ malicious_logs = [
 ]
 
 def process_log_entry(log_line):
-    """Processes a new log line and returns the prediction and anomaly score."""
+    """Processes a new log line and returns the score and anomaly flag."""
     parsed = parse_log_line(log_line)
-    if not parsed: return 1, 0.0
+    if not parsed:
+        return 1, 0.0  # default to normal
 
     df_new = pd.DataFrame([parsed])
-    
-    # Feature Engineering (remains the same)
+
+    # --- Feature Engineering ---
     message_embedding = embedding_model.encode([df_new['message'].iloc[0]])
     message_features_df = pd.DataFrame(message_embedding)
     df_new['msg_length'] = df_new['message'].str.len()
     df_new['special_chars'] = df_new['message'].apply(lambda x: len(re.findall(r'[^a-zA-Z0-9\s]', x)))
     structural_features = df_new[['msg_length', 'special_chars']]
     process_features_df = pd.get_dummies(df_new['process'], prefix='proc')
-    new_log_features_df = pd.concat([structural_features.reset_index(drop=True), message_features_df, process_features_df.reset_index(drop=True)], axis=1)
+    
+    new_log_features_df = pd.concat(
+        [structural_features.reset_index(drop=True),
+         message_features_df,
+         process_features_df.reset_index(drop=True)], axis=1
+    )
+    
     new_log_features_df.columns = new_log_features_df.columns.astype(str)
     final_features = new_log_features_df.reindex(columns=reference_cols, fill_value=0)
     final_features_scaled = scaler.transform(final_features)
-    
-    # --- GET PREDICTION AND SCORE ---
-    prediction = model.predict(final_features_scaled)
-    score = model.score_samples(final_features_scaled)
-    
-    return prediction[0], score[0]
+
+    # --- Compute anomaly score ---
+    score = model.decision_function(final_features_scaled)[0]  # higher = normal
+    is_anomaly = 1 if score < threshold else 0  # ✅ threshold-based classification
+
+    return is_anomaly, score
 
 def main():
     """Main simulation loop with diagnostic scores."""
@@ -61,9 +70,9 @@ def main():
     try:
         with open('data/normal_traffic.log', 'r') as f:
             normal_lines = f.readlines()[:30]
-        
+
         injection_point = 15
-        
+
         with open(live_log_file, 'w') as live_log:
             for i, line in enumerate(normal_lines):
                 if i == injection_point:
@@ -72,10 +81,11 @@ def main():
                     live_log.flush()
                     print("-" * 50)
                     print(f"Injecting malicious entry: {malicious_line.strip()}")
-                    
-                    prediction, score = process_log_entry(malicious_line)
-                    print(f"ANOMALY SCORE: {score:.4f}") # Print the score
-                    if prediction == -1:
+
+                    is_anomaly, score = process_log_entry(malicious_line)
+                    print(f"ANOMALY SCORE: {score:.4f} | THRESHOLD: {threshold:.4f}")
+
+                    if is_anomaly == 1:
                         print("🔴 \033[91mSUCCESS: Anomaly correctly detected!\033[0m")
                     else:
                         print("🟡 \033[93mFAILURE: Malicious injection was NOT detected.\033[0m")
@@ -84,12 +94,11 @@ def main():
 
                 live_log.write(line)
                 live_log.flush()
-                
-                prediction, score = process_log_entry(line)
-                # Only print score for normal logs for brevity
+
+                is_anomaly, score = process_log_entry(line)
                 print(f"🟢 (Score: {score:.4f}) STATUS: Normal -> {line.strip()}")
-                
-                if prediction != 1:
+
+                if is_anomaly == 1:
                     print(f"🟡 \033[93mWARNING: A normal log was flagged as an anomaly (False Positive).\033[0m")
                 time.sleep(0.2)
 
