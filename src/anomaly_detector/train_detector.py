@@ -4,6 +4,7 @@ from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
 import joblib
 from sentence_transformers import SentenceTransformer
+from sklearn.preprocessing import RobustScaler
 
 def parse_log_line(line):
     log_pattern = re.compile(r'(\w+\s+\d+\s+\d{2}:\d{2}:\d{2})\s+([\w-]+)\s+([\w]+)\[(\d+)\]:\s+(.*)')
@@ -23,9 +24,12 @@ def main():
     
     print("Performing feature engineering...")
     
-    embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-    message_embeddings = embedding_model.encode(df['message'].tolist(), show_progress_bar=True)
-    message_features_df = pd.DataFrame(message_embeddings)
+    embedding_model = SentenceTransformer('all-mpnet-base-v2')
+
+   message_embeddings = embedding_model.encode(df['message'].tolist(), show_progress_bar=True)
+message_features_df = pd.DataFrame(message_embeddings)
+message_features_df = (message_features_df - message_features_df.mean()) / message_features_df.std()
+
 
     df['msg_length'] = df['message'].str.len()
     df['special_chars'] = df['message'].apply(lambda x: len(re.findall(r'[^a-zA-Z0-9\s]', x)))
@@ -37,13 +41,24 @@ def main():
     
     # ---Scale the features ---
     print("Scaling features...")
-    scaler = StandardScaler()
+    
+scaler = RobustScaler()
+
     features_scaled = scaler.fit_transform(features)
     
     print(f"Created scaled feature matrix with shape: {features_scaled.shape}")
 
     print("Training the Isolation Forest model...")
-    model = IsolationForest(n_estimators=100, contamination='auto', random_state=42)
+    model = IsolationForest(
+    n_estimators=200,
+    max_samples='auto',
+    contamination=0.02,   # detect top 2% most anomalous samples
+    max_features=1.0,
+    bootstrap=False,
+    random_state=42,
+    n_jobs=-1
+)
+
     model.fit(features_scaled)
     
     # --- Save the scaler along with other artifacts ---
