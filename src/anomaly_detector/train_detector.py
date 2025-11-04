@@ -25,8 +25,7 @@ def main():
     print("Performing feature engineering...")
     
     embedding_model = SentenceTransformer('all-mpnet-base-v2')
-
-   message_embeddings = embedding_model.encode(df['message'].tolist(), show_progress_bar=True)
+    message_embeddings = embedding_model.encode(df['message'].tolist(), show_progress_bar=True)
     message_features_df = pd.DataFrame(message_embeddings)
     message_features_df = (message_features_df - message_features_df.mean()) / message_features_df.std()
 
