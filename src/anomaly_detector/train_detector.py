@@ -42,7 +42,6 @@ def main():
 
     # Normalize embeddings
     message_features_df = pd.DataFrame(message_embeddings)
-    message_features_df = (message_features_df - message_features_df.mean()) / message_features_df.std()
 
     # Structural and categorical features
     print("🔹 Extracting structural and categorical features...")
