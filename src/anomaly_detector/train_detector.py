@@ -45,6 +45,7 @@ def main():
     print("Training the Isolation Forest model...")
     model = IsolationForest(n_estimators=100, contamination='auto', random_state=42)
     model.fit(features_scaled)
+    os.makedirs('models', exist_ok=True)
     
     # --- Save the scaler along with other artifacts ---
     joblib.dump(model, 'models/isolation_forest_model.joblib')
