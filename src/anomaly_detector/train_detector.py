@@ -27,8 +27,8 @@ def main():
     embedding_model = SentenceTransformer('all-mpnet-base-v2')
 
    message_embeddings = embedding_model.encode(df['message'].tolist(), show_progress_bar=True)
-message_features_df = pd.DataFrame(message_embeddings)
-message_features_df = (message_features_df - message_features_df.mean()) / message_features_df.std()
+    message_features_df = pd.DataFrame(message_embeddings)
+    message_features_df = (message_features_df - message_features_df.mean()) / message_features_df.std()
 
 
     df['msg_length'] = df['message'].str.len()
@@ -42,7 +42,7 @@ message_features_df = (message_features_df - message_features_df.mean()) / messa
     # ---Scale the features ---
     print("Scaling features...")
     
-scaler = RobustScaler()
+    scaler = RobustScaler()
 
     features_scaled = scaler.fit_transform(features)
     
@@ -56,8 +56,7 @@ scaler = RobustScaler()
     max_features=1.0,
     bootstrap=False,
     random_state=42,
-    n_jobs=-1
-)
+    n_jobs=-1)
 
     model.fit(features_scaled)
     
