@@ -6,9 +6,6 @@ from sklearn.preprocessing import RobustScaler
 import joblib
 from sentence_transformers import SentenceTransformer
 
-# ----------------------------
-# Helper: Parse a single log line
-# ----------------------------
 def parse_log_line(line):
     log_pattern = re.compile(r'(\w+\s+\d+\s+\d{2}:\d{2}:\d{2})\s+([\w.-]+)\s+([\w-]+)\[(\d+)\]:\s+(.*)')
     match = log_pattern.match(line)
@@ -17,20 +14,16 @@ def parse_log_line(line):
         return {'process': process, 'message': message.strip()}
     return None
 
-
-# ----------------------------
-# Main Training Function
-# ----------------------------
 def main():
     log_file_path = 'data/normal_traffic.log'
     model_dir = 'models'
 
-    # Create model directory if missing
+    # Ensure model directory exists
     os.makedirs(model_dir, exist_ok=True)
 
     print("🔹 Starting anomaly detector training with feature scaling...")
 
-    # --- Load and parse logs ---
+    # Load and parse logs
     with open(log_file_path, 'r', encoding='utf-8') as f:
         lines = f.readlines()
 
@@ -42,23 +35,23 @@ def main():
 
     print(f"✅ Parsed {len(df)} log entries")
 
-    # --- Text Embeddings using SentenceTransformer ---
+    # Generate sentence embeddings
     print("🔹 Generating sentence embeddings...")
     embedding_model = SentenceTransformer('all-mpnet-base-v2')
     message_embeddings = embedding_model.encode(df['message'].tolist(), show_progress_bar=True)
 
-    # Normalize embeddings (Z-score)
+    # Normalize embeddings
     message_features_df = pd.DataFrame(message_embeddings)
     message_features_df = (message_features_df - message_features_df.mean()) / message_features_df.std()
 
-    # --- Structural and Process Features ---
+    # Structural and categorical features
     print("🔹 Extracting structural and categorical features...")
     df['msg_length'] = df['message'].str.len()
     df['special_chars'] = df['message'].apply(lambda x: len(re.findall(r'[^a-zA-Z0-9\s]', x)))
     structural_features = df[['msg_length', 'special_chars']]
     process_features = pd.get_dummies(df['process'], prefix='proc')
 
-    # --- Combine all features ---
+    # Combine all features
     features = pd.concat([
         structural_features.reset_index(drop=True),
         message_features_df.reset_index(drop=True),
@@ -68,35 +61,30 @@ def main():
 
     print(f"✅ Created feature matrix with shape: {features.shape}")
 
-    # --- Scale Features ---
+    # Scale features
     print("🔹 Scaling features using RobustScaler...")
     scaler = RobustScaler()
     features_scaled = scaler.fit_transform(features)
 
-    # --- Train Isolation Forest ---
+    # Train Isolation Forest model
     print("🔹 Training Isolation Forest model...")
     model = IsolationForest(
         n_estimators=200,
         max_samples='auto',
-        contamination=0.02,  # Detect top 2% anomalies
+        contamination=0.02,
         max_features=1.0,
         bootstrap=False,
         random_state=42,
         n_jobs=-1
     )
-
     model.fit(features_scaled)
 
-    # --- Save Artifacts ---
+    # Save model artifacts
     joblib.dump(model, os.path.join(model_dir, 'isolation_forest_model.joblib'))
     joblib.dump(scaler, os.path.join(model_dir, 'scaler.joblib'))
     joblib.dump(features.columns.tolist(), os.path.join(model_dir, 'feature_columns.joblib'))
 
     print("\n✅ Model, scaler, and feature columns saved successfully in 'models/'.")
 
-
-# ----------------------------
-# Entry Point
-# ----------------------------
 if __name__ == "__main__":
     main()
