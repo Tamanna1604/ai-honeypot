@@ -67,15 +67,7 @@ def main():
 
     # Train Isolation Forest model
     print("🔹 Training Isolation Forest model...")
-    model = IsolationForest(
-        n_estimators=200,
-        max_samples='auto',
-        contamination=0.02,
-        max_features=1.0,
-        bootstrap=False,
-        random_state=42,
-        n_jobs=-1
-    )
+    model = IsolationForest(n_estimators=100, contamination='auto', random_state=42)
     model.fit(features_scaled)
 
     # Save model artifacts
